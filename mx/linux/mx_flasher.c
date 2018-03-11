@@ -26,6 +26,8 @@
  */
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
+
 #include <usb.h>
 
 
@@ -905,15 +907,16 @@ static void usage(const char *app_name)
 		"%s [-i] [-g] [-e] [-r [file]] [-w <file>] ...\n"
 		"  -i         print some info about connected device\n"
 		"  -g         print some info about game ROM inside device\n"
+		"  -h         display this help and exit\n"
 		"  -e[1]      erase whole flash ROM in device, '1' uses different erase method\n"
 		"  -m[1-3]    set MX mode: 2M+RAM, 4M no RAM, 4M+RAM\n"
-		"  -f         skip file check\n"
+		"  -f         skip filename extension check\n"
 		"  -r [file]  copy game image from device to file; can autodetect filename\n"
-		"  -w <file>  write file to device; also does erase\n"
-		"  -sr [file] read save RAM to file\n"
-		"  -sw <file> write save RAM file to device\n"
-		"  -sc        clear save RAM\n"
-		"  -v         with -w or -sw: verify written file\n",
+		"  -w <file>  write file to device; also does erasing\n"
+		"  -R [file]  read save RAM to file; can autodetect filename\n"
+		"  -W <file>  write save RAM file to device\n"
+		"  -E         erase save RAM\n"
+		"  -v         with -w or -W: verify written file\n",
 		app_name);
 }
 
@@ -927,14 +930,11 @@ int main(int argc, char *argv[])
 	int w_fsize = 0, sw_fsize = 0;
 	struct usb_dev_handle *device;
 	char fname_buff[65];
-	int i, ret = 0;
+	int c, ret = 0;
+	char *opts = "hige::m:fr::w:R::W:Ev";
 
-	for (i = 1; i < argc; i++)
-	{
-		if (argv[i][0] != '-')
-			break;
-
-		switch (argv[i][1]) {
+	while ((c = getopt (argc, argv, opts)) != -1) {
+		switch (c) {
 		case 'i':
 			pr_dev_info = 1;
 			break;
@@ -943,8 +943,10 @@ int main(int argc, char *argv[])
 			break;
 		case 'e':
 			do_erase_size = 0x400000;
-			if (argv[i][2] == '1')
-				erase_method = 1;
+			if (optarg) {
+				if (atoi(optarg) == 1)
+					erase_method = 1;
+			}
 			break;
 		case 'f':
 			do_check = 0;
@@ -953,46 +955,41 @@ int main(int argc, char *argv[])
 			do_verify = 1;
 			break;
 		case 'm':
-			mx_mode = argv[i][2];
+			mx_mode = optarg[0];
 			break;
 		case 'r':
 			do_read = 1;
-			if (argv[i+1] && argv[i+1][0] != '-')
-				r_fname = argv[++i];
-			break;
-		case 'w':
-			if (argv[i+1] && argv[i+1][0] != '-')
-				w_fname = argv[++i];
-			else
-				goto breakloop;
-			break;
-		case 's':
-			switch (argv[i][2]) {
-			case 'r':
-				do_read_ram = 1;
-				if (argv[i+1] && argv[i+1][0] != '-')
-					sr_fname = argv[++i];
-				break;
-			case 'w':
-				if (argv[i+1] && argv[i+1][0] != '-')
-					sw_fname = argv[++i];
-				else
-					goto breakloop;
-				break;
-			case 'c':
-				do_clear_ram = 1;
-				break;
-			default:
-				goto breakloop;
+			if (optarg) {
+				r_fname = optarg;
 			}
 			break;
+		case 'w':
+			w_fname = optarg;
+			break;
+		case 'R':
+			do_read_ram = 1;
+			if (optarg) {
+				sr_fname = optarg;
+			}
+			break;
+		case 'W':
+			sw_fname = optarg;
+			break;
+		case 'E':
+			do_clear_ram = 1;
+			break;
+		case 'h':
+			usage(argv[0]);
+			return 0;
+		case '?':
+			fprintf(stderr, "Try '%s -h' for more information.\n", argv[0]);
+			return -1;
 		default:
-			goto breakloop;
+			abort();
 		}
 	}
 
-breakloop:
-	if (i <= 1 || i < argc) {
+	if (optind <= 1 || optind < argc) {
 		usage(argv[0]);
 		return 1;
 	}
