@@ -86,6 +86,7 @@ static const struct {
 #define C_MODE_2M_RAM	0x43
 #define C_RAM_TMP_OFF	0x21
 #define C_RAM_TMP_ON	0x23
+#define C_MODE_GET      0x80
 
 typedef struct {
 	u8 magic[4];
@@ -127,7 +128,7 @@ typedef struct {
 typedef struct {
 	u8 firmware_ver[4];
 	u8 bootloader_ver[4];
-	char names[56];
+	char names[44];
 } dev_info_t;
 
 typedef struct {
@@ -396,9 +397,16 @@ static int get_page_size(const page_table_t *table, u32 addr, u32 *size)
 
 static int set_ram_mode(struct usb_dev_handle *dev, u8 mode)
 {
+	dev_info_t dummy_info;
 	dev_cmd_t cmd;
 	u8 buff[2];
 	int ret;
+
+	/* must perform dummy info read here,
+	 * or else device hangs after close (firmware bug?) */
+	ret = read_info(dev, CTL_DATA_BUS, &dummy_info);
+	if (ret < 0)
+		return ret;
 
 	prepare_cmd(&cmd, CMD_SEC_COMPAT);
 	cmd.write_flag = 1;
@@ -409,6 +417,24 @@ static int set_ram_mode(struct usb_dev_handle *dev, u8 mode)
 		goto end;
 
 	ret = read_data(dev, buff, sizeof(buff));
+	if (buff[0] == 0x43) {
+		printf("MX mode was set to:\n");
+		switch (buff[1]) {
+			case 0x01:
+				printf("\t4M no RAM\n");
+				break;
+			case 0x02:
+				printf("\t4M+RAM\n");
+				break;
+			case 0x03:
+				printf("\t2M+RAM\n");
+				break;
+			default:
+				fprintf(stderr, "ERROR: unknown MX mode: %x\n", buff[1]);
+				fprintf(stderr, "You shall unplug and then replug the usb device\n");
+				ret = -1;
+		}
+	}
 
 end:
 	if (ret < 0)
@@ -910,6 +936,7 @@ static void usage(const char *app_name)
 		"  -h         display this help and exit\n"
 		"  -e[1]      erase whole flash ROM in device, '1' uses different erase method\n"
 		"  -m[1-3]    set MX mode: 2M+RAM, 4M no RAM, 4M+RAM\n"
+		"  -M         obtain current MX mode setting\n"
 		"  -f         skip filename extension check\n"
 		"  -r [file]  copy game image from device to file; can autodetect filename\n"
 		"  -w <file>  write file to device; also does erasing\n"
@@ -926,12 +953,13 @@ int main(int argc, char *argv[])
 	void *r_fdata = NULL, *w_fdata = NULL, *sr_fdata = NULL, *sw_fdata = NULL;
 	int do_read_ram = 0, do_clear_ram = 0, do_verify = 0, do_check = 1;
 	int pr_dev_info = 0, pr_rom_info = 0, do_read = 0, mx_mode = 0;
+	int read_mx_mode = 0;
 	int erase_method = 0, do_erase_size = 0;
 	int w_fsize = 0, sw_fsize = 0;
 	struct usb_dev_handle *device;
 	char fname_buff[65];
 	int c, ret = 0;
-	char *opts = "hige::m:fr::w:R::W:Ev";
+	char *opts = "hige::Mm:fr::w:R::W:Ev";
 
 	while ((c = getopt (argc, argv, opts)) != -1) {
 		switch (c) {
@@ -953,6 +981,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'v':
 			do_verify = 1;
+			break;
+		case 'M':
+			read_mx_mode = 1;
 			break;
 		case 'm':
 			mx_mode = optarg[0];
@@ -1122,6 +1153,12 @@ int main(int argc, char *argv[])
 		ret = write_filename(device, p, FILENAME_RAM);
 		if (ret < 0)
 			fprintf(stderr, "warning: failed to save RAM filename\n");
+	}
+
+
+	/* read mode */
+	if (read_mx_mode) {
+		set_ram_mode(device, C_MODE_GET);
 	}
 
 	/* set mode */
