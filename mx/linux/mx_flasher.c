@@ -228,12 +228,21 @@ static int read_info(struct usb_dev_handle *device, u8 ctl_id, dev_info_t *info)
 
 static void printf_info(dev_info_t *info)
 {
-	printf(" firmware version:   %X.%X.%X%c\n", info->firmware_ver[0],
+	printf(" firmware version:   %02X.%02X.%02X%c\n", info->firmware_ver[0],
 		info->firmware_ver[1], info->firmware_ver[2], info->firmware_ver[3]);
-	printf(" bootloader version: %X.%X.%X%c\n", info->bootloader_ver[0],
+	printf(" bootloader version: %02X.%02X.%02X%c\n", info->bootloader_ver[0],
 		info->bootloader_ver[1], info->bootloader_ver[2], info->bootloader_ver[3]);
 	info->names[sizeof(info->names) - 1] = 0;
-	printf(" device name:        %s\n", info->names);
+	printf(" devices:\n");
+	char *token;
+	char delim[2];
+	delim[0] = 0x01;
+	delim[1] = 0;
+	token = strtok(info->names, delim);
+	while (token != NULL) {
+		printf("\t%s\n", token);
+		token = strtok(NULL, delim);
+	}
 }
 
 static void print_progress(u32 done, u32 total)
